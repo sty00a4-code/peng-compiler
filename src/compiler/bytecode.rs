@@ -1,109 +1,88 @@
-use std::collections::HashSet;
+use peng_parser::location::position::{Located, Position};
+
+use super::types::Type;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ByteCode {
     None, Halt,
     Jump, JumpIf, JumpIfNot,
     Call, CallReturn, Return,
-    Pointer(ValuePointer),
+    Break(usize), Continue(usize),
+    Pointer(usize),
+    ConstPointer(ConstPointer),
     Load, Store,
+    Field, Index,
+
+    Add, Sub, Mul, Div, Mod, Pow,
+    EQ, NE, LT, GT, LE, GE, And, Or, In,
+    Neg, Not
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConstPointer {
+    Int(usize), Float(usize), Bool(bool),
+    Char(char), String(usize),
+    Vector(usize), Object(usize),
+    Option(usize), Result(usize),
+    Type(usize),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ValuePointer {
-    Constant(usize),
-    Local(usize),
-    Argument(usize),
-    Global(usize),
-    Function(usize),
-    Stack(usize),
-}
-
+pub struct CodeAddr(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ConstantAddr(pub usize);
+pub struct FuncAddr(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FunctionAddr(pub usize);
+pub struct VarAddr(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct LocalAddr(pub usize);
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct GlobalAddr(pub usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeAddr(pub usize);
-#[derive(Debug, Clone, PartialEq)]
-pub struct Scope {
-    pub parent: Option<ScopeAddr>,
-    pub children: Vec<ScopeAddr>,
-    pub locals: HashSet<LocalAddr>,
-    pub arguments: HashSet<LocalAddr>,
-    pub functions: HashSet<FunctionAddr>,
-    pub globals: HashSet<GlobalAddr>,
-}
-impl Scope {
-    pub fn new(parent: Option<ScopeAddr>) -> Self {
-        Self {
-            parent,
-            children: vec![],
-            locals: HashSet::new(),
-            arguments: HashSet::new(),
-            functions: HashSet::new(),
-            globals: HashSet::new(),
-        }
-    }
-    pub fn local(&mut self) -> LocalAddr {
-        let local = LocalAddr(self.locals.len());
-        self.locals.insert(local);
-        local
-    }
-    pub fn argument(&mut self) -> LocalAddr {
-        let argument = LocalAddr(self.arguments.len());
-        self.arguments.insert(argument);
-        argument
-    }
-    pub fn function(&mut self, code: &mut Code) -> FunctionAddr {
-        let function = FunctionAddr(self.functions.len());
-        self.functions.insert(function);
-        code.functions.insert(function);
-        function
-    }
-    pub fn global(&mut self, code: &mut Code) -> GlobalAddr {
-        let global = GlobalAddr(self.globals.len());
-        self.globals.insert(global);
-        code.globals.insert(global);
-        global
-    }
-}
+/// `ConstAddr(row, addr)`
+pub struct ConstAddr(pub usize, pub usize);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Code {
-    pub code: Vec<ByteCode>,
-    pub constants: HashSet<ConstantAddr>,
-    pub functions: HashSet<FunctionAddr>,
-    pub globals: HashSet<GlobalAddr>,
-    pub scopes: Vec<Scope>,
-    pub current_locals: HashSet<GlobalAddr>,
+    pub code: Vec<Located<ByteCode>>,
+    pub funcs: Vec<CodeAddr>,
+    pub consts: (Vec<i64>, Vec<f64>, Vec<String>, Vec<Type>),
 }
 impl Code {
     pub fn new() -> Self {
         Self {
             code: vec![],
-            constants: HashSet::new(),
-            functions: HashSet::new(),
-            globals: HashSet::new(),
-            scopes: vec![Scope::new(None)],
+            funcs: vec![],
+            consts: (vec![], vec![], vec![], vec![]),
         }
     }
-    pub fn new_scope(&mut self, parent: Option<ScopeAddr>) -> ScopeAddr {
-        let addr = ScopeAddr(self.scopes.len());
-        let scope = Scope::new(parent);
-        self.scopes.push(scope);
-        addr
+    pub fn len(&self) -> usize {
+        self.code.len()
     }
-    pub fn remove_scope(&mut self, addr: ScopeAddr) {
-        let scope = self.scopes.remove(addr.0);
-        scope.remove(self);
-        for child in scope.children {
-            self.remove_scope(child);
-        }
+    pub fn push(&mut self, bytecode: ByteCode, pos: Position) {
+        self.code.push(Located::new(bytecode, pos));
+    }
+    pub fn overwrite(&mut self, code_addr: CodeAddr, bytecode: ByteCode) {
+        let Located { item: _, pos } = self.code.remove(code_addr.0);
+        self.code.insert(code_addr.0, Located::new(bytecode, pos));
+    }
+    pub fn func(&mut self, code_addr: CodeAddr) -> FuncAddr {
+        let addr = self.funcs.len();
+        self.funcs.push(code_addr);
+        FuncAddr(addr)
+    }
+    pub fn int(&mut self, value: i64) -> ConstAddr {
+        let addr = self.consts.0.len();
+        self.consts.0.push(value);
+        ConstAddr(0, addr)
+    }
+    pub fn float(&mut self, value: f64) -> ConstAddr {
+        let addr = self.consts.1.len();
+        self.consts.1.push(value);
+        ConstAddr(1, addr)
+    }
+    pub fn string(&mut self, value: String) -> ConstAddr {
+        let addr = self.consts.2.len();
+        self.consts.2.push(value);
+        ConstAddr(2, addr)
+    }
+    pub fn type_(&mut self, value: Type) -> ConstAddr {
+        let addr = self.consts.3.len();
+        self.consts.3.push(value);
+        ConstAddr(3, addr)
     }
 }

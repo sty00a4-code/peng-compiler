@@ -1,3 +1,4 @@
+pub mod types;
 pub mod bytecode;
 pub mod compiler;
 
